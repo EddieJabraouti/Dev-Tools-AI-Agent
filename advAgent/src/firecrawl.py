@@ -24,3 +24,14 @@ class FirecrawlService:
             except Exception as e:
                 print(e)
                 return []
+
+    def scrape_company_pages(self, url:str):
+        try:
+            result = self.app.scrape_url(
+                url,
+                formats=["markdown"]
+            )
+            return result
+        except Exception as e:
+            print(e)
+            return None
