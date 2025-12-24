@@ -99,7 +99,6 @@ class Workflow:
                     description= results.get("markdown", ""),
                     website=url,
                     tech_stack=[],
-                    competitors = [],
                 )
                 scraped = self.firecrawl.scrape_company_pages(url)
                 if scraped:
@@ -121,6 +120,23 @@ class Workflow:
     #analyze and given recommendations
     def _analyze_step(self, state: ResearchState) -> Dict[str, Any]:
         print("Generating recommendations")
+
+        company_data = ", ".join([
+            company.json() for company in state.companies
+        ])
+
+        messages = [
+            SystemMessage(content = self.prompts.RECOMMENDATIONS_SYSTEM),
+            HumanMessage(content=self.prompts.recommendations_user(state.query, company_data))
+        ]
+
+        response = self.llm.invoke(messages)
+        return {"analysis": response.content}
+
+    def run(self, query:str) ->ResearchState:
+        initial_state = ResearchState(query=query)
+        final_state = self.workflow.invoke(initial_state)
+        return ResearchState(**final_state)
 
 
 
