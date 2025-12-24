@@ -1,5 +1,5 @@
 import os
-from firecrawl import FirecrawlApp, ScrapeOptions
+from firecrawl import FirecrawlApp
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,10 +16,10 @@ class FirecrawlService:
                 result = self.app.search(
                     query = f"{query} company pricing",
                     limit = num_results,
-                    scrape_options=ScrapeOptions(
-                        formats=["markdown"]
+                    scrape_options={
+                        "formats": ["markdown"]
+                         }
                     )
-                )
                 return result
             except Exception as e:
                 print(e)
@@ -27,7 +27,7 @@ class FirecrawlService:
 
     def scrape_company_pages(self, url:str):
         try:
-            result = self.app.scrape_url(
+            result = self.app.scrape(
                 url,
                 formats=["markdown"]
             )

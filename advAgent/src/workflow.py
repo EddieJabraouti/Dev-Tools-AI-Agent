@@ -5,13 +5,18 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from .models import ResearchState, CompanyInfo, CompanyAnalysis
 from .firecrawl import FirecrawlService
 from .prompts import DeveloperToolsPrompts
+from urllib.parse import urlparse
 
 class Workflow:
     def __init__(self):
-        self.firecrawl = FirecrawlService
+        self.firecrawl = FirecrawlService()
         self.llm = ChatOpenAI(model = "gpt-4o-mini", temperature=0.1)
         self.prompts = DeveloperToolsPrompts()
         self.workflow = self._build_workflow()
+
+    def _is_valid_url(self, url:str)->bool:
+        parsed = urlparse(url)
+        return parsed.scheme in {"http", "https"} and "." in parsed.netloc
 
     #initialize all agent nodes
     def _build_workflow(self):
@@ -34,8 +39,7 @@ class Workflow:
 
         #scrape the markdown content from found pages
         all_content = ""
-        for results in search_results.data:
-            url = results.get("url","")
+        for url, _ in search_results:
             scraped = self.firecrawl.scrape_company_pages(url)
             if scraped:
                 all_content + scraped.markdown[:1500] + "\n\n"
@@ -81,49 +85,91 @@ class Workflow:
                                    integration_capabilities=[],)
 
         #research step
+
     def _research_step(self, state: ResearchState) -> Dict[str, Any]:
+        # Retrieve extracted tool names from state, if available
         extracted_tools = getattr(state, "extracted_tools", [])
+
+        # Fallback to direct search if no tools were extracted
         if not extracted_tools:
-            print("No extracted tools found, falling back to direct search") #handle edge case
-            search_results = self.firecrawl.search_companies(state.query, num_results = 4)
-            tool_names = [
-                results.get("metadata", {}).get("title", "Unknown")
-                for results in search_results.data
-            ]
+            print("No extracted tools found, falling back to direct search")
+            search_results = self.firecrawl.search_companies(state.query, num_results=4)
+
+            tool_names = []
+            for item in search_results:
+                if isinstance(item, tuple):
+                    _, metadata = item
+                    if isinstance(metadata, dict):
+                        title = metadata.get("title")
+                        if title:
+                            tool_names.append(title)
+
+            tool_names = tool_names[:4]
         else:
             tool_names = extracted_tools[:4]
+
         print(f"Researching specific tools: {', '.join(tool_names)}")
 
-        companies = []
+        companies: list[CompanyInfo] = []
+
+        # Perform research for each identified tool
         for tool_name in tool_names:
-            tool_search_results = self.firecrawl.search_companies(tool_name + " Official site ", num_results=1) #look up tool name and site
+            tool_search_results = self.firecrawl.search_companies(
+                f"{tool_name} official site",
+                num_results=1
+            )
 
-            if tool_search_results:
-                results = tool_search_results.data[0]
-                url = results.get("url", "")
+            url = None
+            markdown_preview = ""
 
-                company = CompanyInfo( #initalize company info
-                    name = tool_name,
-                    description= results.get("markdown", ""),
-                    website=url,
-                    tech_stack=[],
-                )
-                scraped = self.firecrawl.scrape_company_pages(url)
-                if scraped:
-                    content = scraped.markdown
-                    analysis = self._analyze_company_content(company.name, content) #llm will analyze content
+            # Iterate over search results to extract a valid URL and metadata
+            for item in tool_search_results:
+                if not isinstance(item, tuple):
+                    continue
 
-                    company_pricing_model = analysis.pricing_model
-                    company.is_open_source = analysis.is_open_source
-                    company.tech_stack = analysis.tech_stack
-                    company.description = analysis.description
-                    company.api_available = analysis.api_available
-                    company.language_support = analysis.language_support
-                    company.integration_capabilities = analysis.integration_capabilities
+                candidate_url, metadata = item
 
-                    companies.append(company) #append details from object into array
+                if isinstance(candidate_url, str) and candidate_url.startswith("http"):
+                    url = candidate_url
+                    if isinstance(metadata, dict):
+                        markdown_preview = metadata.get("markdown", "")
+                    break
 
-        return {"companies": companies} #return companies
+            # Skip processing if no valid URL was found
+            if not url or not self._is_valid_url(url):
+                continue
+
+            # Initialize company information
+            company = CompanyInfo(
+                name=tool_name,
+                description=markdown_preview,
+                website=url,
+                tech_stack=[]
+            )
+
+            # Scrape the official website for detailed content
+            scraped = self.firecrawl.scrape_company_pages(
+                url
+            )
+            if not scraped or not scraped.markdown:
+                continue
+
+            # Analyze scraped content using structured LLM output
+            analysis = self._analyze_company_content(company.name, scraped.markdown)
+
+            # Populate company fields from analysis results
+            company.pricing_model = analysis.pricing_model
+            company.is_open_source = analysis.is_open_source
+            company.tech_stack = analysis.tech_stack
+            company.description = analysis.description
+            company.api_available = analysis.api_available
+            company.language_support = analysis.language_support
+            company.integration_capabilities = analysis.integration_capabilities
+
+            companies.append(company)
+
+        # Return updated state with researched companies
+        return {"companies": companies}
 
     #analyze and given recommendations
     def _analyze_step(self, state: ResearchState) -> Dict[str, Any]:

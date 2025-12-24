@@ -8,7 +8,7 @@ def main():
     print("Developer Tools Research Agent")
 
     while True:
-        query = input("Developer Tools Quert: ").strip()
+        query = input("Developer Tools Query: ").strip()
         if query.lower() in {"quit", "exit"}:
             break
         if query:
@@ -33,7 +33,7 @@ def main():
                     print(f"API: {api_status}")
 
                 if company.integration_capabilities:
-                    print(f"Integrations: {', '.join(company.integration_capablities[:5])}")
+                    print(f"Integrations: {', '.join(company.integration_capabilities[:5])}")
 
                 if company.description and company.description != "Failed":
                     print(f"Description: {company.description}")
