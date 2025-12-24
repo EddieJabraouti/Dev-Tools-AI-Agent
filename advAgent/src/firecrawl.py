@@ -11,7 +11,7 @@ class FirecrawlService:
             raise ValueError ("Missing FIRECRAWL_API_KEY environment variable")
         self.app = FirecrawlApp(api_key=api_key)
 
-        def search_companies(self, query: str, num_results: int = 5):
+    def search_companies(self, query: str, num_results: int = 5):
             try:
                 result = self.app.search(
                     query = f"{query} company pricing",
